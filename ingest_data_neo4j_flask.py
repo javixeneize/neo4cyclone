@@ -1,13 +1,9 @@
 from neo4j import GraphDatabase
-import os
-import click
 import sbom_reader
-import json
+import os
 
-os.environ.setdefault('NEO4J_DB', 'neo4j://localhost:7687')
-os.environ.setdefault('NEO4J_USER', 'neo4j')
-os.environ.setdefault('NEO4J_PWD', 'password')
-
+driver = GraphDatabase.driver(os.environ.get('NEO4J_DB'),
+                              auth=(os.environ.get('NEO4J_USER'), os.environ.get('NEO4J_PWD')))
 
 def ingest_project(project): # todo verificar si el proyecto existe ya
     result = driver.execute_query('''
@@ -16,7 +12,7 @@ def ingest_project(project): # todo verificar si el proyecto existe ya
     RETURN n
     ''', project=project.get('name'), timestamp=project.get('timestamp'), urn=project.get('urn'),
            dependencies=project.get('dependencies'))
-    print ("project {} added".format(project.get('name')))
+    return project.get('name')
 
 
 def ingest_dependencies(dependencies):
@@ -34,7 +30,7 @@ def ingest_dependencies(dependencies):
                 RETURN d
                ''', purl=dependency.get('purl'), dependency=dependency.get('dependency'))
             deps_added+=1
-    print("{} dependencies added".format(deps_added))
+    return deps_added
 
 
 def ingest_vulns(vulns_list): # todo ver que hacer cuando una vulnerabilidad exista, pero afecte a una libreria nueva
@@ -58,7 +54,7 @@ def ingest_vulns(vulns_list): # todo ver que hacer cuando una vulnerabilidad exi
                     # ver si ha cambiado el score
                     if library not in record.data().get('v').get('libraries'):
                         print ('new library affected') ## ADD NEW LIBRARY!
-    print("{} vulnerabilities added".format(vulns_added))
+    return vulns_added
 
 
 def create_project_relations():
@@ -75,28 +71,15 @@ def create_vuln_relations():
     MERGE(d)-[:VULNERABLE_TO]->(v)
     ''')
 
-@click.command()
-@click.argument('project', required=True)
-@click.argument('file', required=False)
-def run_cli_scan( project, file):
-    if not file:
-        file= 'sbom.json'
-    with open (file) as f:
-        data = json.loads(f.read())
+def run_cli_scan( project, data):
+
     project_data, deps, vulns = sbom_reader.get_sbom_data(project, data)
-    ingest_project(project_data)
-    ingest_dependencies(deps)
-    ingest_vulns(vulns)
+    project_name = ingest_project(project_data)
+    dep_number = ingest_dependencies(deps)
+    vuln_number = ingest_vulns(vulns)
     create_project_relations()
     create_vuln_relations()
-    return ("Data successfully ingested in Neo4J")
-
-
-
-if __name__ == "__main__":
-    driver = GraphDatabase.driver(os.environ.get('NEO4J_DB'),
-                                  auth=(os.environ.get('NEO4J_USER'), os.environ.get('NEO4J_PWD')))
-    run_cli_scan(['test', 'juiceshop.json'])
     driver.close()
+    return project_name, dep_number, vuln_number
 
 

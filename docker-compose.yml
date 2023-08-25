@@ -1,0 +1,19 @@
+version: '2.1'
+
+services:
+  neo4j:
+    image: 'neo4j:latest'
+    ports:
+      - "7687:7687"
+      - "7474:7474"
+    volumes:
+      - $HOME/neo4j/data:/data
+      - $HOME/neo4j/logs:/logs
+
+  neo4cyclone:
+    image: 'javidr/neo4cyclone:latest'
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+
