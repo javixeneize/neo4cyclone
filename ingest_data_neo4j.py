@@ -1,72 +1,83 @@
-from neo4j import GraphDatabase
-import os
-import click
 import sbom_reader
-import json
-
-os.environ.setdefault('NEO4J_DB', 'neo4j://localhost:7687')
-os.environ.setdefault('NEO4J_USER', 'neo4j')
-os.environ.setdefault('NEO4J_PWD', 'password')
+from config import driver
 
 
-def ingest_project(project): # todo verificar si el proyecto existe ya
-    result = driver.execute_query('''
-    MERGE (n:project {project_name: $project, timestamp: $timestamp, urn: $urn, dependencies: $dependencies})
-    SET n.caption = $project
-    RETURN n
-    ''', project=project.get('name'), timestamp=project.get('timestamp'), urn=project.get('urn'),
-           dependencies=project.get('dependencies'))
-    print ("project {} added".format(project.get('name')))
+def ingest_project(project):
+    r = driver.execute_query('''
+      MATCH (n)
+      where n.project_name = $project
+      return n
+             ''', project=project.get('name'))
+    if len(r.records) == 0:
+        driver.execute_query('''
+        MERGE (n:project {project_name: $project, timestamp: $timestamp, urn: $urn, dependencies: $dependencies})
+        SET n.caption = $project
+        RETURN n
+        ''', project=project.get('name'), timestamp=project.get('timestamp'), urn=project.get('urn'),
+                             dependencies=project.get('dependencies'))
+        return project.get('name')
 
 
 def ingest_dependencies(dependencies):
     deps_added = 0
     for dependency in dependencies:
         r = driver.execute_query('''
-          MATCH (d) 
+          MATCH (d)
           where d.purl = $purl  AND d.dependency = $dependency
           return d
                  ''', purl=dependency.get('purl'), dependency=dependency.get('dependency'))
         if len(r.records) == 0:
-            result = driver.execute_query('''
+            driver.execute_query('''
                MERGE (d:dependency {purl: $purl, dependency: $dependency})
                 SET d.caption = $dependency
                 RETURN d
                ''', purl=dependency.get('purl'), dependency=dependency.get('dependency'))
-            deps_added+=1
-    print("{} dependencies added".format(deps_added))
+            deps_added += 1
+    return deps_added
 
 
-def ingest_vulns(vulns_list): # todo ver que hacer cuando una vulnerabilidad exista, pero afecte a una libreria nueva
+def ingest_vulns(vulns_list):
     vulns_added = 0
     for vuln in vulns_list:
         r = driver.execute_query('''
-          MATCH (v) 
-          where v.id = $id
+          MATCH (v)
+          where v.id = $id AND v.id = $id
           return v
                  ''', id=vuln.get('id'))
-        if len(r.records) == 0: # si la vuln no existe en la bd
-            result = driver.execute_query('''
+        if len(r.records) == 0:
+            driver.execute_query('''
             MERGE (v:vulnerability {id: $id, score: $score, libraries: $libraries})
             SET v.caption = $id
-            RETURN v            
+            RETURN v
             ''', id=vuln.get('id'), score=vuln.get('score'), libraries=vuln.get('libraries'))
-            vulns_added+=1
-        else: # si existe, ver si afecta a alguna libreria nueva
+            vulns_added += 1
+        else:
             for record in r.records:
+                if record.data().get('v').get('score') != vuln.get('score'):
+                    driver.execute_query('''
+                                MATCH (v:vulnerability {id: $id})
+                                SET v.score = $score
+                                RETURN v
+                                ''', id=vuln.get('id'), score=vuln.get('score'))
                 for library in vuln.get('libraries'):
-                    # ver si ha cambiado el score
                     if library not in record.data().get('v').get('libraries'):
-                        print ('new library affected') ## ADD NEW LIBRARY!
-    print("{} vulnerabilities added".format(vulns_added))
+                        newlist = record.data().get('v').get('libraries')
+                        newlist.append(library)
+                        driver.execute_query('''
+                                    MATCH (v:vulnerability {id: $id})
+                                    SET v.libraries = $libraries
+                                    RETURN v
+                                    ''', id=vuln.get('id'), libraries=newlist)
+    return vulns_added
 
 
 def create_project_relations():
-    r = driver.execute_query('''
+    driver.execute_query('''
     MATCH (d:dependency), (p:project)
     WHERE d.purl IN  p.dependencies
     MERGE (p)-[:USES]->(d)
     ''')
+
 
 def create_vuln_relations():
     driver.execute_query('''   MATCH (d:dependency), (v:vulnerability)
@@ -75,28 +86,16 @@ def create_vuln_relations():
     MERGE(d)-[:VULNERABLE_TO]->(v)
     ''')
 
-@click.command()
-@click.argument('project', required=True)
-@click.argument('file', required=False)
-def run_cli_scan( project, file):
-    if not file:
-        file= 'sbom.json'
-    with open (file) as f:
-        data = json.loads(f.read())
+
+def ingest_data(project, data):
     project_data, deps, vulns = sbom_reader.get_sbom_data(project, data)
-    ingest_project(project_data)
-    ingest_dependencies(deps)
-    ingest_vulns(vulns)
-    create_project_relations()
-    create_vuln_relations()
-    return ("Data successfully ingested in Neo4J")
-
-
-
-if __name__ == "__main__":
-    driver = GraphDatabase.driver(os.environ.get('NEO4J_DB'),
-                                  auth=(os.environ.get('NEO4J_USER'), os.environ.get('NEO4J_PWD')))
-    run_cli_scan(['test', 'juiceshop.json'])
+    project_name = ingest_project(project_data)
+    dep_number = 0
+    vuln_number = 0
+    if project_name:
+        dep_number = ingest_dependencies(deps)
+        vuln_number = ingest_vulns(vulns)
+        create_project_relations()
+        create_vuln_relations()
     driver.close()
-
-
+    return project_name, dep_number, vuln_number

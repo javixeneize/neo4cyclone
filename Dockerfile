@@ -5,7 +5,7 @@ WORKDIR /usr/Neo4Cyclone
 COPY *.py .
 COPY requirements.txt .
 RUN pip3 install -r requirements.txt
-RUN rm requirements.txt ingest_data_neo4j.py
+RUN rm requirements.txt neo4cyclone_local.py
 EXPOSE 8080
 ENTRYPOINT ["python"]
-CMD ["main.py"]
+CMD ["neo4cyclone.py"]
