@@ -40,6 +40,16 @@ That call returns the summary of the action performed
   "New vulnerabilities added": 0
 }
 ```
+
+
+### Running Neo4Cyclone standalone
+Neo4Cyclone can be run standalone, but it requires a running instance of Neo4J in the same machine. Also, the environmental variables need to be set locally.
+
+When you run the script, you need to send two arguments: The project name and the sbom file
+```
+ python neo4cyclone_local.py juiceshop juiceshop.json
+```
+
 ### Visualisations
 
 The ingestion generates three different nodes, which are
@@ -58,3 +68,19 @@ Here is an example on how the juiceshop SBOM is displayed:
 ![](images/neo4j_display.png)
 
 
+### Visualisation cheatsheet
+
+Here are some useful commands to visualise the data in Neo4J:
+
+Display all dependencies for a given project
+```
+MATCH (n:project)-[a:USES]->(d:dependency) where n.project_name = 'juiceshop' RETURN n,d LIMIT 250
+```
+Display only vulnerable dependencies and vulnerabilities for a given project
+```
+MATCH (n:project)-[a:USES]->(d:dependency)-[b:VULNERABLE_TO]->(v:vulnerability) where n.project_name = 'juiceshop' RETURN n,d,v LIMIT 250
+```
+Display all the dependencies and vulnerabilities for a given project
+```
+MATCH (n:project)-[a:USES]->(d:dependency) where n.project_name = 'juiceshop' OPTIONAL MATCH (d:dependency)-[b:VULNERABLE_TO]->(v:vulnerability) RETURN n,d,v LIMIT 250
+```
