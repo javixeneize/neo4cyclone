@@ -23,15 +23,15 @@ def ingest_dependencies(dependencies):
     for dependency in dependencies:
         r = driver.execute_query('''
           MATCH (d)
-          where d.purl = $purl  AND d.dependency = $dependency
+          where d.ref = $ref  AND d.dependency = $dependency
           return d
-                 ''', purl=dependency.get('purl'), dependency=dependency.get('dependency'))
+                 ''', ref=dependency.get('ref'), dependency=dependency.get('dependency'))
         if len(r.records) == 0:
             driver.execute_query('''
-               MERGE (d:dependency {purl: $purl, dependency: $dependency})
+               MERGE (d:dependency {ref: $ref, dependency: $dependency})
                 SET d.caption = $dependency
                 RETURN d
-               ''', purl=dependency.get('purl'), dependency=dependency.get('dependency'))
+               ''', ref=dependency.get('ref'), dependency=dependency.get('dependency'))
             deps_added += 1
     return deps_added
 
@@ -74,14 +74,14 @@ def ingest_vulns(vulns_list):
 def create_project_relations():
     driver.execute_query('''
     MATCH (d:dependency), (p:project)
-    WHERE d.purl IN  p.dependencies
+    WHERE d.ref IN  p.dependencies
     MERGE (p)-[:USES]->(d)
     ''')
 
 
 def create_vuln_relations():
     driver.execute_query('''   MATCH (d:dependency), (v:vulnerability)
-    WHERE d.purl IN  v.libraries
+    WHERE d.ref IN  v.libraries
 
     MERGE(d)-[:VULNERABLE_TO]->(v)
     ''')
