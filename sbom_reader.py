@@ -8,7 +8,7 @@ def get_sbom_data(project_name, data):
     project = {'name': project_name,
                'timestamp': data.get('metadata').get('timestamp'),
                'urn': data.get('serialNumber'),
-               'dependencies': [component.get('purl') for component in data.get('components') if
+               'dependencies': [component.get('bom-ref') for component in data.get('components') if
                                 component.get('type') == 'library']
                }
     dependencies = get_dependencies(data.get('components'))
@@ -26,7 +26,7 @@ def get_dependencies(components):
             dependency = component.get('name') + '@' + component.get('version')
             if component.get('group'):
                 dependency = component.get('group') + dependency
-            dep = {'purl': component.get('purl'), 'dependency': dependency}
+            dep = {'ref': component.get('bom-ref'), 'dependency': dependency}
             dependencies.append(dep)
     return dependencies
 
